@@ -75,14 +75,13 @@ class VarnishGeneralUtility
             if (empty(self::$extConf)) {
                 self::$extConf = GeneralUtility::makeInstance(\TYPO3\CMS\Core\Configuration\ExtensionConfiguration::class)->get('varnish');
             }
-        } else if (version_compare(TYPO3_version, '8', '>=')) {
+        } else if (version_compare(TYPO3_version, '7', '>=')) {
             self::$extConf = unserialize($GLOBALS['TYPO3_CONF_VARS']['EXT']['extConf']['varnish']);
 
             if (!empty($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['varnish'])) {
                 self::$extConf = array_merge(self::$extConf, $GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['varnish']);
             }
         }
-
     }
 
 
