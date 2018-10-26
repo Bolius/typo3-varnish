@@ -27,6 +27,7 @@ namespace Snowflake\Varnish\Controller;
 use Snowflake\Varnish\Utility\VarnishGeneralUtility;
 use Snowflake\Varnish\Utility\VarnishHttpUtility;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
+use TYPO3\CMS\Frontend\ContentObject\ContentObjectRenderer;
 
 /**
  * This class contains controls communication between TYPO3 and Varnish
@@ -82,6 +83,24 @@ class VarnishController
             return;
         }
 
+        // move this elsewhere ?
+        $GLOBALS['TSFE'] = GeneralUtility::makeInstance('TYPO3\CMS\Frontend\Controller\TypoScriptFrontendController',
+            $GLOBALS['TYPO3_CONF_VARS'], 1, 0);
+        $GLOBALS['TSFE']->sys_page = GeneralUtility::makeInstance('TYPO3\CMS\Frontend\Page\PageRepository');
+        $rootLine = $GLOBALS['TSFE']->sys_page->getRootLine(1);
+        $GLOBALS['TSFE']->tmpl = GeneralUtility::makeInstance('TYPO3\CMS\Core\TypoScript\ExtendedTemplateService');
+        $GLOBALS['TSFE']->tmpl->init();
+        $GLOBALS['TSFE']->tmpl->runThroughTemplates($rootLine);
+        $GLOBALS['TSFE']->tmpl->tt_track = 0;
+        $GLOBALS['TSFE']->tmpl->generateConfig();
+        $GLOBALS['TSFE']->tmpl->loaded = 1;
+        $GLOBALS['TSFE']->config['config']['tx_realurl_enable'] = 1;
+        $GLOBALS['TSFE']->config['mainScript'] = 'index.php';
+        if ($temp = $GLOBALS['TSFE']->getDomainDataForPid($cacheCmd)) {
+            $host = $temp['domainName'];
+        }
+        // ----
+
         // Log debug infos
         VarnishGeneralUtility::devLog('clearCache', array ('cacheCmd' => $cacheCmd));
 
@@ -89,16 +108,25 @@ class VarnishController
         // all other Commands ("page", "all") led to a BAN of the whole Cache
         $cacheCmd = (int)$cacheCmd;
         $command = array (
+            // used for making a Varnish ban
             $cacheCmd > 0 ? 'Varnish-Ban-TYPO3-Pid: ' . $cacheCmd : 'Varnish-Ban-All: 1',
-            'Varnish-Ban-TYPO3-Sitename: ' . VarnishGeneralUtility::getSitename()
+            'Varnish-Ban-TYPO3-Sitename: ' . VarnishGeneralUtility::getSitename(),
+
+            // used for making a Varnish purge
+            'Host: ' . $host,
+            'X-Forwarded-Proto: https',
         );
         $method = VarnishGeneralUtility::getProperty('banRequestMethod') ?: 'BAN';
 
+        $contentObjectRenderer = GeneralUtility::makeInstance(ContentObjectRenderer::class);
+        $path = $contentObjectRenderer->typoLink_URL([
+            'parameter' => $cacheCmd,
+        ]);
         // issue command on every Varnish Server
         /** @var $varnishHttp VarnishHttpUtility */
         $varnishHttp = GeneralUtility::makeInstance(VarnishHttpUtility::class);
         foreach ($this->instanceHostnames as $currentHost) {
-            $varnishHttp::addCommand($method, $currentHost, $command);
+            $varnishHttp::addCommand($method, $currentHost . '/' . $path, $command);
         }
     }
 }
